@@ -1,0 +1,731 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+<meta charset="UTF-8">
+<title>Hestevæddeløb Timer</title>
+<style>
+body { font-family: Arial, sans-serif; padding: 20px; }
+.topControls { display:flex; gap:20px; align-items:center; flex-wrap:wrap; margin-bottom:15px; }
+.timers { display: flex; justify-content: space-between; margin-bottom: 20px; gap:15px; flex-wrap:wrap; }
+.timerBox { flex: 1; min-width:220px; text-align: center; font-size: 2em; border:1px solid #ddd; border-radius:8px; padding:10px; }
+.subInfo { font-size: 0.5em; color: #555; line-height:1.4; }
+button { margin: 5px; padding: 10px 15px; cursor:pointer; }
+table { border-collapse: collapse; margin-top: 15px; width: 100%; }
+th, td { border: 1px solid #ccc; padding: 6px; text-align: center; }
+th { background: #f0f0f0; }
+.activeRace { background: #dff0ff; }
+.statusBar { margin:12px 0; padding:10px; border-radius:8px; border:1px solid #ddd; background:#f5f5f5; font-weight:bold; }
+.statusRunning { background:#e8f7e8; }
+.statusPaused { background:#fff4d6; }
+.statusStopped { background:#f3f3f3; }
+.modalOverlay { position:fixed; inset:0; background:rgba(0,0,0,.45); display:none; align-items:center; justify-content:center; z-index:9999; }
+.modalOverlay.show { display:flex; }
+.modalBox { background:#fff; border-radius:12px; padding:20px; min-width:320px; max-width:90vw; box-shadow:0 10px 30px rgba(0,0,0,.25); text-align:center; }
+.volteButtons { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-top:15px; }
+.volteButtons button { font-size:1.1em; padding:14px; }
+.settingsField { text-align:left; margin-bottom:12px; }
+.settingsField input { width:100%; padding:8px; box-sizing:border-box; }
+</style>
+</head>
+
+<body>
+
+<h2>Hestevæddeløb Timer – Race <span id="raceNumberDisplay">1</span></h2>
+
+<div class="topControls">
+<label>RPU:
+<select id="rpuSelect">
+<option value="1">RPU 1</option>
+<option value="2">RPU 2</option>
+<option value="3">RPU 3</option>
+</select>
+</label>
+
+<label>Bane:
+<select id="trackSelect">
+<option value="1">Lunden</option>
+<option value="2">Aarhus</option>
+<option value="5">Odense</option>
+<option value="6">Skive</option>
+<option value="7">Aalborg</option>
+<option value="8">Nykøbing</option>
+<option value="9">Bornholm</option>
+<option value="10">Klampenborg</option>
+</select>
+</label>
+
+<button id="settingsBtn">⚙ Settings</button>
+</div>
+
+<div class="timers">
+<div class="timerBox">
+Hovedtid<br><span id="mainTime">0:00.0</span>
+<div class="subInfo">
+Løbslængde: <span id="currentRaceLength">0</span> m<br>
+Starttype: <span id="currentRaceStartType">Autostart</span><br>
+Vindervolte: <span id="currentWinnerVolte">-</span>
+</div>
+</div>
+<div class="timerBox">Sidste 1000 m<br><span id="last1000Time">0:00.0</span></div>
+<div class="timerBox">Sidste 500 m<br><span id="last500Time">0:00.0</span></div>
+</div>
+
+<div id="statusBar" class="statusBar statusStopped">Status: Klar</div>
+
+<div>
+<button id="startBtn">Start</button>
+<button id="splitBtn">500 m</button>
+<button id="last1000Btn">Sidste 1000 m</button>
+<button id="last500Btn">Sidste 500 m</button>
+<button id="stopAllBtn">Stop alle</button>
+<button id="resetBtn">Reset / Næste løb</button>
+</div>
+
+<div>
+<label>Race time offset (ms):
+<input type="number" id="offsetInput" value="0">
+</label>
+</div>
+
+<h3>Split tider</h3>
+<table>
+<thead><tr><th>Distance</th><th>Tid</th><th>1000m tid</th></tr></thead>
+<tbody id="splitTable"></tbody>
+</table>
+
+<h3>Slutberegninger</h3>
+<table>
+<thead><tr><th>Type</th><th>Tid</th><th>1000m tid</th></tr></thead>
+<tbody id="finalTable"></tbody>
+</table>
+
+<h3>Løbsprogram</h3>
+<button onclick="prevRace()">◀ Forrige</button>
+<button onclick="nextRace()">Næste ▶</button>
+<button onclick="addRace()">+ Tilføj løb</button>
+
+<table>
+<thead>
+<tr><th>Løb</th><th>Længde (m)</th><th>Starttype</th><th>Vinder-volte</th></tr>
+</thead>
+<tbody id="raceTable"></tbody>
+</table>
+
+<div id="volteModal" class="modalOverlay">
+<div class="modalBox">
+<h3>Vælg vindervolte</h3>
+<div class="volteButtons">
+<button onclick="selectVolte(1)">1</button>
+<button onclick="selectVolte(2)">2</button>
+<button onclick="selectVolte(3)">3</button>
+<button onclick="selectVolte(4)">4</button>
+<button onclick="selectVolte(5)">5</button>
+<button onclick="selectVolte(6)">6</button>
+</div>
+</div>
+</div>
+
+<div id="settingsModal" class="modalOverlay">
+<div class="modalBox" style="width:520px;text-align:left;">
+<h3>Settings</h3>
+
+<div class="settingsField">
+<label>Timing server URL</label>
+<input id="settingTimingServerUrl" list="timingServerUrlHistory">
+
+<datalist id="timingServerUrlHistory"></datalist>
+</div>
+
+<div class="settingsField">
+<label>Local WebSocket port</label>
+<input id="settingLocalWsPort" type="number">
+</div>
+
+<div class="settingsField">
+<label>Auto-clear grafik efter sekunder</label>
+<input id="settingAutoClearSeconds" type="number" min="0">
+</div>
+
+<div class="settingsField">
+<label>Companion URL 1</label>
+<input id="settingCompanionUrl1">
+</div>
+
+<div class="settingsField">
+<label>Companion URL 2</label>
+<input id="settingCompanionUrl2">
+</div>
+
+<button id="saveSettingsBtn">Gem settings</button>
+<button id="closeSettingsBtn">Luk</button>
+
+<p style="font-size:.9em;color:#666;">
+Ændring af WebSocket-port kræver genstart af appen.
+</p>
+</div>
+</div>
+
+<script>
+const STORAGE_KEY = "horseRaceTimerState_v5";
+
+let COMPANION_URLS = [
+    "http://194.255.124.138:25002/api/custom-variable",
+    "http://127.0.0.1:8000/api/custom-variable"
+];
+
+let TIMING_SERVER_URL = "http://194.255.124.138:500/api/timing";
+let LOCAL_WS_PORT = 8080;
+let AUTO_CLEAR_SECONDS = 30;
+let autoClearTimer = null;
+
+let races = Array.from({ length: 10 }, () => ({
+    length: 2000,
+    startType: "autostart",
+    winnerVolte: 1
+}));
+
+let currentRace = 0;
+let startTime = null;
+let elapsedBeforePause = 0;
+let interval = null;
+let running = false;
+let splitDistance = 500;
+let splits = [];
+let last1000Start = null;
+let last500Start = null;
+let raceTimeOffset = 0;
+let pendingStopCalculation = false;
+let pendingStopNow = null;
+let ws = null;
+
+async function loadAppSettings() {
+    if (!window.appSettings) return;
+
+    const settings = await window.appSettings.get();
+
+    TIMING_SERVER_URL = settings.timingServerUrl || TIMING_SERVER_URL;
+    LOCAL_WS_PORT = Number(settings.localWsPort) || 8080;
+    AUTO_CLEAR_SECONDS = Number(settings.autoClearSeconds) || 30;
+
+    if (Array.isArray(settings.companionUrls)) {
+        COMPANION_URLS = settings.companionUrls.filter(Boolean);
+    }
+
+    settingTimingServerUrl.value = TIMING_SERVER_URL;
+    const history = Array.isArray(settings.timingServerUrlHistory)
+    ? settings.timingServerUrlHistory
+    : [];
+
+timingServerUrlHistory.innerHTML = history
+    .map(url => `<option value="${url}"></option>`)
+    .join("");
+    settingLocalWsPort.value = LOCAL_WS_PORT;
+    settingAutoClearSeconds.value = AUTO_CLEAR_SECONDS;
+    settingCompanionUrl1.value = COMPANION_URLS[0] || "";
+    settingCompanionUrl2.value = COMPANION_URLS[1] || "";
+}
+
+function connectWebSocket() {
+    try {
+        ws = new WebSocket(`ws://127.0.0.1:${LOCAL_WS_PORT}`);
+
+        ws.onopen = () => console.log("UI connected to local websocket");
+
+        ws.onmessage = (event) => {
+            let msg = String(event.data).trim();
+
+            try {
+                if (msg.startsWith("{")) {
+                    msg = JSON.parse(msg).cmd;
+                }
+            } catch {}
+
+            switch (msg) {
+                case "START_TOGGLE": startBtn.click(); break;
+                case "SPLIT": splitBtn.click(); break;
+                case "LAST_1000": last1000Btn.click(); break;
+                case "LAST_500": last500Btn.click(); break;
+                case "STOP_ALL": stopAllBtn.click(); break;
+                case "RESET": resetBtn.click(); break;
+                case "1":
+                case "2":
+                case "3":
+                case "4":
+                case "5":
+                case "6":
+                    if (pendingStopCalculation) selectVolte(Number(msg));
+                    break;
+            }
+        };
+
+        ws.onerror = err => console.warn("WebSocket fejl:", err);
+        ws.onclose = () => console.warn("WebSocket lukket");
+    } catch (err) {
+        console.warn("WebSocket kunne ikke oprettes:", err);
+    }
+}
+
+settingsBtn.onclick = async () => {
+    await loadAppSettings();
+    settingsModal.classList.add("show");
+};
+
+closeSettingsBtn.onclick = () => {
+    settingsModal.classList.remove("show");
+};
+
+saveSettingsBtn.onclick = async () => {
+const timingUrl = settingTimingServerUrl.value.trim();
+
+const oldSettings = await window.appSettings.get();
+const oldHistory = Array.isArray(oldSettings.timingServerUrlHistory)
+    ? oldSettings.timingServerUrlHistory
+    : [];
+
+const newHistory = [
+    timingUrl,
+    ...oldHistory.filter(url => url !== timingUrl)
+].filter(Boolean).slice(0, 5);
+
+const newSettings = {
+    timingServerUrl: timingUrl,
+    timingServerUrlHistory: newHistory,
+        localWsPort: Number(settingLocalWsPort.value) || 8080,
+        autoClearSeconds: Number(settingAutoClearSeconds.value) || 30,
+        companionUrls: [
+            settingCompanionUrl1.value.trim(),
+            settingCompanionUrl2.value.trim()
+        ].filter(Boolean)
+    };
+
+    await window.appSettings.set(newSettings);
+
+    TIMING_SERVER_URL = newSettings.timingServerUrl;
+    LOCAL_WS_PORT = newSettings.localWsPort;
+    AUTO_CLEAR_SECONDS = newSettings.autoClearSeconds;
+    COMPANION_URLS = newSettings.companionUrls;
+
+    settingsModal.classList.remove("show");
+    alert("Settings gemt. Genstart appen hvis WebSocket-port er ændret.");
+};
+
+function format(ms) {
+    if (!ms || ms < 0) return "0:00.0";
+    const s = ms / 1000;
+    return `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2,"0")}.${Math.floor((ms % 1000) / 100)}`;
+}
+
+function getRace() {
+    return races[currentRace];
+}
+
+function getMainElapsed(now = Date.now()) {
+    if (!startTime) return elapsedBeforePause;
+    return elapsedBeforePause + (now - startTime);
+}
+
+function getVolteDistance(volte) {
+    return {1:0,2:20,3:40,4:60,5:80,6:100}[volte] ?? 0;
+}
+
+function updateStatus(text, cls) {
+    statusBar.textContent = text;
+    statusBar.className = "statusBar " + cls;
+}
+
+function saveState() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        races,
+        currentRace,
+        raceTimeOffset,
+        rpuValue: rpuSelect.value,
+        trackValue: trackSelect.value
+    }));
+}
+
+function loadState() {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return;
+
+    try {
+        const saved = JSON.parse(raw);
+        if (Array.isArray(saved.races)) races = saved.races;
+        if (Number.isInteger(saved.currentRace)) currentRace = saved.currentRace;
+        raceTimeOffset = Number(saved.raceTimeOffset) || 0;
+        offsetInput.value = raceTimeOffset;
+        if (saved.rpuValue) rpuSelect.value = saved.rpuValue;
+        if (saved.trackValue) trackSelect.value = saved.trackValue;
+    } catch {}
+}
+
+function sendTimingData(values) {
+    COMPANION_URLS.forEach(url => {
+        for (let k in values) {
+            fetch(`${url}/${k}/value?value=${encodeURIComponent(values[k])}`, {
+                method: "POST",
+                mode: "no-cors"
+            }).catch(console.warn);
+        }
+    });
+
+    fetch(`${TIMING_SERVER_URL}/${rpuSelect.value}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ race: currentRace + 1, ...values })
+    }).catch(console.warn);
+}
+
+function scheduleAutoClearGraphics() {
+    if (autoClearTimer) {
+        clearTimeout(autoClearTimer);
+        autoClearTimer = null;
+    }
+
+    if (!AUTO_CLEAR_SECONDS || AUTO_CLEAR_SECONDS <= 0) return;
+
+    autoClearTimer = setTimeout(() => {
+     sendTimingData({
+    split500: null,
+    split1000: null,
+    last1000: null,
+    last500: null,
+    race_time: null
+});
+        autoClearTimer = null;
+    }, AUTO_CLEAR_SECONDS * 1000);
+}
+
+function updateCurrentRaceLength() {
+    const race = getRace();
+    currentRaceLength.textContent = race.length;
+    currentRaceStartType.textContent = race.startType === "voltestart" ? "Voltestart" : "Autostart";
+    currentWinnerVolte.textContent = race.startType === "voltestart" ? race.winnerVolte : "-";
+}
+
+function updateRaceNumber() {
+    raceNumberDisplay.textContent = currentRace + 1;
+}
+
+function updateSplitButton() {
+    const raceLength = getRace().length;
+    splitBtn.disabled = splitDistance > raceLength;
+    splitBtn.textContent = splitDistance > raceLength ? "Ingen flere splits" : `${splitDistance} m`;
+}
+
+function renderSplits() {
+    splitTable.innerHTML = splits.map(s =>
+        `<tr><td>${s.dist} m</td><td>${format(s.time)}</td><td>${format(s.pace)}</td></tr>`
+    ).join("");
+}
+
+function renderRaces() {
+    raceTable.innerHTML = races.map((r, i) => `
+        <tr class="${i === currentRace ? "activeRace" : ""}">
+            <td>${i + 1}</td>
+            <td><input type="number" value="${r.length}" onchange="updateRaceLength(${i}, this.value)"></td>
+            <td>
+                <select onchange="updateRaceStartType(${i}, this.value)">
+                    <option value="autostart" ${r.startType === "autostart" ? "selected" : ""}>Autostart</option>
+                    <option value="voltestart" ${r.startType === "voltestart" ? "selected" : ""}>Voltestart</option>
+                </select>
+            </td>
+            <td>
+                <select ${r.startType !== "voltestart" ? "disabled" : ""} onchange="updateRaceWinnerVolte(${i}, this.value)">
+                    ${[1,2,3,4,5,6].map(v => `<option value="${v}" ${r.winnerVolte === v ? "selected" : ""}>${v}</option>`).join("")}
+                </select>
+            </td>
+        </tr>
+    `).join("");
+
+    updateCurrentRaceLength();
+    updateSplitButton();
+    updateRaceNumber();
+}
+
+function updateRaceLength(i, value) {
+    races[i].length = Number(value) || 2000;
+    renderRaces();
+    saveState();
+}
+
+function updateRaceStartType(i, value) {
+    races[i].startType = value;
+    renderRaces();
+    saveState();
+}
+
+function updateRaceWinnerVolte(i, value) {
+    races[i].winnerVolte = Number(value);
+    updateCurrentRaceLength();
+    saveState();
+}
+
+function showVolteModal() {
+    pendingStopCalculation = true;
+    volteModal.classList.add("show");
+}
+
+function hideVolteModal() {
+    pendingStopCalculation = false;
+    volteModal.classList.remove("show");
+}
+
+function selectVolte(volte) {
+    if (!pendingStopCalculation) return;
+    getRace().winnerVolte = volte;
+    hideVolteModal();
+    renderRaces();
+    saveState();
+    finalizeStopAll(pendingStopNow);
+}
+
+function update() {
+    const now = Date.now();
+    mainTime.textContent = format(getMainElapsed(now));
+    if (last1000Start) last1000Time.textContent = format(now - last1000Start);
+    if (last500Start) last500Time.textContent = format(now - last500Start);
+}
+startBtn.onclick = () => {
+    // PAUSE
+    if (running) {
+        clearInterval(interval);
+
+        elapsedBeforePause = getMainElapsed();
+
+        startTime = null;
+        running = false;
+
+        startBtn.textContent = "Start";
+
+        updateStatus("Status: Pauset", "statusPaused");
+        return;
+    }
+
+    // START
+    clearInterval(interval);
+
+    startTime = Date.now();
+
+    interval = setInterval(update, 10);
+
+    running = true;
+
+    startBtn.textContent = "Pause";
+
+    updateStatus("Status: Kører", "statusRunning");
+};
+
+splitBtn.onclick = () => {
+    if (!running && elapsedBeforePause === 0) return;
+
+    const time = getMainElapsed();
+    const pace = time / (splitDistance / 1000);
+    splits.push({ dist: splitDistance, time, pace });
+
+    if (splits.length === 1) sendTimingData({ split500: format(pace) });
+    if (splits.length === 2) sendTimingData({ split1000: format(pace) });
+
+if (splitDistance === 500) {
+    splitDistance = 1000;
+} else {
+    splitDistance = 999999;
+}
+
+renderSplits();
+updateSplitButton();
+};
+
+last1000Btn.onclick = () => {
+    last1000Start = Date.now();
+};
+
+last500Btn.onclick = () => {
+    last500Start = Date.now();
+};
+
+stopAllBtn.onclick = () => {
+    clearInterval(interval);
+
+    if (!startTime && elapsedBeforePause === 0) return;
+
+    const now = Date.now();
+    if (running) elapsedBeforePause = getMainElapsed(now);
+
+    startTime = null;
+    running = false;
+    startBtn.textContent = "Start";
+    pendingStopNow = now;
+
+    if (getRace().startType === "voltestart") {
+        updateStatus("Status: Afventer valg af vindervolte", "statusPaused");
+        showVolteModal();
+        return;
+    }
+
+    finalizeStopAll(now);
+};
+
+function finalizeStopAll(now = Date.now()) {
+    const race = getRace();
+    const total = elapsedBeforePause;
+
+    let rows = [];
+    let sendData = {};
+
+    if (last1000Start) {
+        const t1000 = now - last1000Start;
+        rows.push(`<tr><td>Sidste 1000 m</td><td>${format(t1000)}</td><td>${format(t1000)}</td></tr>`);
+        sendData.last1000 = format(t1000);
+    }
+
+    if (last500Start) {
+        const t500 = now - last500Start;
+        rows.push(`<tr><td>Sidste 500 m</td><td>${format(t500)}</td><td>${format(t500 * 2)}</td></tr>`);
+        sendData.last500 = format(t500 * 2);
+    }
+
+    let effectiveDistance = race.length;
+
+    if (race.startType === "voltestart") {
+        effectiveDistance += getVolteDistance(race.winnerVolte);
+        rows.push(`<tr><td>Vindervolte</td><td>${race.winnerVolte}</td><td>+${getVolteDistance(race.winnerVolte)} m</td></tr>`);
+    }
+
+    const avg1000 = total / (effectiveDistance / 1000);
+    const avg1000Offset = avg1000 + raceTimeOffset;
+
+    rows.push(`<tr><td>Beregnet distance</td><td>${effectiveDistance} m</td><td>-</td></tr>`);
+    rows.push(`<tr><td>Hele løbet</td><td>${format(total)}</td><td>${format(avg1000)}</td></tr>`);
+    rows.push(`<tr><td>Hele løbet (offset)</td><td>-</td><td>${format(avg1000Offset)}</td></tr>`);
+
+    finalTable.innerHTML = rows.join("");
+
+    sendTimingData({
+        ...sendData,
+        race_time: format(avg1000Offset)
+    });
+
+    scheduleAutoClearGraphics();
+
+    pendingStopNow = null;
+    updateStatus("Status: Sluttid beregnet", "statusStopped");
+    saveState();
+}
+
+resetBtn.onclick = () => {
+    if (autoClearTimer) {
+        clearTimeout(autoClearTimer);
+        autoClearTimer = null;
+    }
+
+    clearInterval(interval);
+
+    running = false;
+    startTime = null;
+    elapsedBeforePause = 0;
+    startBtn.textContent = "Start";
+
+    sendTimingData({
+        split500:null,
+        split1000:null,
+        last1000:null,
+        last500:null,
+        race_time:null
+    });
+
+    splits = [];
+    splitDistance = 500;
+    last1000Start = null;
+    last500Start = null;
+    pendingStopNow = null;
+    hideVolteModal();
+
+    mainTime.textContent = last1000Time.textContent = last500Time.textContent = "0:00.0";
+    splitTable.innerHTML = finalTable.innerHTML = "";
+
+    updateStatus("Status: Nulstillet", "statusStopped");
+    nextRace();
+};
+
+offsetInput.onchange = e => {
+    raceTimeOffset = Number(e.target.value) || 0;
+    saveState();
+};
+
+rpuSelect.onchange = saveState;
+trackSelect.onchange = saveState;
+
+function addRace() {
+    races.push({ length: 2000, startType: "autostart", winnerVolte: 1 });
+    renderRaces();
+    saveState();
+}
+
+function nextRace() {
+    if (currentRace < races.length - 1) currentRace++;
+    renderRaces();
+    saveState();
+}
+
+function prevRace() {
+    if (currentRace > 0) currentRace--;
+    renderRaces();
+    saveState();
+}
+
+document.addEventListener("keydown", e => {
+    const tag = document.activeElement?.tagName;
+    if (["INPUT","SELECT","TEXTAREA"].includes(tag)) return;
+
+    if (pendingStopCalculation && ["1","2","3","4","5","6"].includes(e.key)) {
+        selectVolte(Number(e.key));
+        return;
+    }
+
+    switch (e.key) {
+        case " ": e.preventDefault(); startBtn.click(); break;
+        case "s":
+        case "S": splitBtn.click(); break;
+        case "1": last1000Btn.click(); break;
+        case "5": last500Btn.click(); break;
+        case "x":
+        case "X": stopAllBtn.click(); break;
+        case "r":
+        case "R": resetBtn.click(); break;
+        case "ArrowLeft": prevRace(); break;
+        case "ArrowRight": nextRace(); break;
+    }
+});
+loadAppSettings().then(() => {
+
+    // FORCE clean startup state
+    clearInterval(interval);
+
+    running = false;
+    startTime = null;
+    elapsedBeforePause = 0;
+
+    splitDistance = 500;
+    splits = [];
+
+    last1000Start = null;
+    last500Start = null;
+
+    mainTime.textContent = "0:00.0";
+    last1000Time.textContent = "0:00.0";
+    last500Time.textContent = "0:00.0";
+
+    startBtn.textContent = "Start";
+
+    loadState();
+
+    renderRaces();
+
+    // VIGTIGT: forbinder UI’et til Electron websocket-serveren
+    connectWebSocket();
+
+    updateStatus("Status: Klar", "statusStopped");
+});
+</script>
+</body>
+</html>

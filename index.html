@@ -4,12 +4,57 @@
 <meta charset="UTF-8">
 <title>Hestevæddeløb Timer</title>
 <style>
+    .towerPanel {
+    margin-top: 20px;
+    padding: 12px;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    background: #fafafa;
+}
+
+.towerGrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 8px;
+}
 body { font-family: Arial, sans-serif; padding: 20px; }
 .topControls { display:flex; gap:20px; align-items:center; flex-wrap:wrap; margin-bottom:15px; }
-.timers { display: flex; justify-content: space-between; margin-bottom: 20px; gap:15px; flex-wrap:wrap; }
-.timerBox { flex: 1; min-width:220px; text-align: center; font-size: 2em; border:1px solid #ddd; border-radius:8px; padding:10px; }
+.timers {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 20px;
+    gap:10px;
+    flex-wrap:nowrap;
+}
+
+.timerBox {
+    flex: 1;
+    min-width: 0;
+    text-align: center;
+    font-size: 2em;
+    border:1px solid #ddd;
+    border-radius:8px;
+    padding:10px;
+}
 .subInfo { font-size: 0.5em; color: #555; line-height:1.4; }
-button { margin: 5px; padding: 10px 15px; cursor:pointer; }
+button {
+    padding: 10px 12px;
+    cursor:pointer;
+    white-space: nowrap;
+}
+
+.buttonRow {
+    display:flex;
+    gap:8px;
+    flex-wrap:nowrap;
+    width:100%;
+    overflow:hidden;
+}
+
+.buttonRow button {
+    flex:1;
+    min-width:0;
+}
 table { border-collapse: collapse; margin-top: 15px; width: 100%; }
 th, td { border: 1px solid #ccc; padding: 6px; text-align: center; }
 th { background: #f0f0f0; }
@@ -54,6 +99,11 @@ th { background: #f0f0f0; }
 </select>
 </label>
 
+<label>
+Offset:
+<input type="number" id="offsetInput" value="0" style="width:90px;">
+</label>
+
 <button id="settingsBtn">⚙ Settings</button>
 </div>
 
@@ -72,20 +122,15 @@ Vindervolte: <span id="currentWinnerVolte">-</span>
 
 <div id="statusBar" class="statusBar statusStopped">Status: Klar</div>
 
-<div>
+<div class="buttonRow">
 <button id="startBtn">Start</button>
 <button id="splitBtn">500 m</button>
 <button id="last1000Btn">Sidste 1000 m</button>
 <button id="last500Btn">Sidste 500 m</button>
 <button id="stopAllBtn">Stop alle</button>
-<button id="resetBtn">Reset / Næste løb</button>
+<button id="resetBtn">Næste løb</button>
 </div>
 
-<div>
-<label>Race time offset (ms):
-<input type="number" id="offsetInput" value="0">
-</label>
-</div>
 
 <h3>Split tider</h3>
 <table>
@@ -98,6 +143,20 @@ Vindervolte: <span id="currentWinnerVolte">-</span>
 <thead><tr><th>Type</th><th>Tid</th><th>1000m tid</th></tr></thead>
 <tbody id="finalTable"></tbody>
 </table>
+
+<div class="towerPanel">
+<h3>Tower info fra Companion</h3>
+<div class="towerGrid">
+<div><strong>Status:</strong> <span id="towerStatus">-</span></div>
+<div><strong>Race nr.:</strong> <span id="towerRaceNr">-</span></div>
+<div><strong>Winner time:</strong> <span id="towerWinnerTime">-</span></div>
+<div><strong>Temp 1st:</strong> <span id="towerTemp1st">-</span></div>
+<div><strong>1st place:</strong> <span id="tower1stPlace">-</span></div>
+<div><strong>2nd place:</strong> <span id="tower2ndPlace">-</span></div>
+<div><strong>3rd place:</strong> <span id="tower3rdPlace">-</span></div>
+</div>
+<div id="towerMeta" style="margin-top:8px;color:#666;">Polling stoppet</div>
+</div>
 
 <h3>Løbsprogram</h3>
 <button onclick="prevRace()">◀ Forrige</button>
@@ -115,12 +174,12 @@ Vindervolte: <span id="currentWinnerVolte">-</span>
 <div class="modalBox">
 <h3>Vælg vindervolte</h3>
 <div class="volteButtons">
-<button onclick="selectVolte(1)">1</button>
-<button onclick="selectVolte(2)">2</button>
-<button onclick="selectVolte(3)">3</button>
-<button onclick="selectVolte(4)">4</button>
-<button onclick="selectVolte(5)">5</button>
-<button onclick="selectVolte(6)">6</button>
+<button onclick="selectVolte(1)">Volte 1<br>0 m</button>
+<button onclick="selectVolte(2)">Volte 2<br>+20 m</button>
+<button onclick="selectVolte(3)">Volte 3<br>+40 m</button>
+<button onclick="selectVolte(4)">Volte 4<br>+60 m</button>
+<button onclick="selectVolte(5)">Volte 5<br>+80 m</button>
+<button onclick="selectVolte(6)">Volte 6<br>+100 m</button>
 </div>
 </div>
 </div>
@@ -350,7 +409,7 @@ function loadState() {
     try {
         const saved = JSON.parse(raw);
         if (Array.isArray(saved.races)) races = saved.races;
-        if (Number.isInteger(saved.currentRace)) currentRace = saved.currentRace;
+       currentRace = 0;
         raceTimeOffset = Number(saved.raceTimeOffset) || 0;
         offsetInput.value = raceTimeOffset;
         if (saved.rpuValue) rpuSelect.value = saved.rpuValue;
@@ -394,7 +453,125 @@ function scheduleAutoClearGraphics() {
         autoClearTimer = null;
     }, AUTO_CLEAR_SECONDS * 1000);
 }
+let towerPollingInterval = null;
+let towerPollingActive = false;
 
+const TRACKS = {
+    "1": "Lunden",
+    "2": "Aarhus",
+    "5": "Odense",
+    "6": "Skive",
+    "7": "Aalborg",
+    "8": "Nykøbing",
+    "9": "Bornholm",
+    "10": "Klampenborg"
+};
+
+function getTowerVariableNames() {
+    const trackNo = trackSelect.value;
+    return {
+        status: `${trackNo}_tower_status`,
+        raceNr: `${trackNo}_tower_racenr`,
+        winnerTime: `${trackNo}_tower_winner_time`,
+        temp1st: `${trackNo}_tower_temp_1st`,
+        place1st: `${trackNo}_tower_1st_place`,
+        place2nd: `${trackNo}_tower_2nd_place`,
+        place3rd: `${trackNo}_tower_3rd_place`
+    };
+}
+
+function setTowerValue(el, value) {
+    el.textContent = value === undefined || value === null || value === "" ? "-" : String(value);
+}
+
+async function readCustomVariable(variableName) {
+    const urls = COMPANION_URLS.map(base => `${base}/${encodeURIComponent(variableName)}/value`);
+
+    for (const url of urls) {
+        try {
+            const res = await fetch(url, { method: "GET", cache: "no-store" });
+            if (!res.ok) continue;
+
+            const text = await res.text();
+
+            try {
+                const parsed = JSON.parse(text);
+                if (typeof parsed === "string") return parsed;
+                if (parsed && typeof parsed.value !== "undefined") return parsed.value;
+                if (parsed && typeof parsed.result !== "undefined") return parsed.result;
+            } catch {}
+
+            return text;
+        } catch (err) {
+            console.warn(`Kunne ikke læse ${variableName}`, err);
+        }
+    }
+
+    return "-";
+}
+
+async function updateTowerInfo() {
+    const vars = getTowerVariableNames();
+
+    towerMeta.textContent = `Opdaterer fra ${TRACKS[trackSelect.value] || trackSelect.value}...`;
+
+    const [
+        status,
+        raceNr,
+        winnerTime,
+        temp1st,
+        place1st,
+        place2nd,
+        place3rd
+    ] = await Promise.all([
+        readCustomVariable(vars.status),
+        readCustomVariable(vars.raceNr),
+        readCustomVariable(vars.winnerTime),
+        readCustomVariable(vars.temp1st),
+        readCustomVariable(vars.place1st),
+        readCustomVariable(vars.place2nd),
+        readCustomVariable(vars.place3rd)
+    ]);
+
+    setTowerValue(towerStatus, status);
+    setTowerValue(towerRaceNr, raceNr);
+    setTowerValue(towerWinnerTime, winnerTime);
+    setTowerValue(towerTemp1st, temp1st);
+    setTowerValue(tower1stPlace, place1st);
+    setTowerValue(tower2ndPlace, place2nd);
+    setTowerValue(tower3rdPlace, place3rd);
+
+    towerMeta.textContent = `Senest opdateret: ${new Date().toLocaleTimeString("da-DK")} · Bane: ${TRACKS[trackSelect.value] || trackSelect.value}`;
+}
+
+function startTowerPolling() {
+    stopTowerPolling();
+    towerPollingActive = true;
+    updateTowerInfo();
+    towerPollingInterval = setInterval(updateTowerInfo, 3000);
+}
+
+function stopTowerPolling() {
+    towerPollingActive = false;
+    if (towerPollingInterval) {
+        clearInterval(towerPollingInterval);
+        towerPollingInterval = null;
+    }
+    if (typeof towerMeta !== "undefined") {
+        towerMeta.textContent = "Polling stoppet";
+    }
+}
+
+function clearTowerInfo() {
+    setTowerValue(towerStatus, "-");
+    setTowerValue(towerRaceNr, "-");
+    setTowerValue(towerWinnerTime, "-");
+    setTowerValue(towerTemp1st, "-");
+    setTowerValue(tower1stPlace, "-");
+    setTowerValue(tower2ndPlace, "-");
+    setTowerValue(tower3rdPlace, "-");
+    towerMeta.textContent = "Polling stoppet";
+}
 function updateCurrentRaceLength() {
     const race = getRace();
     currentRaceLength.textContent = race.length;
@@ -408,8 +585,13 @@ function updateRaceNumber() {
 
 function updateSplitButton() {
     const raceLength = getRace().length;
+
     splitBtn.disabled = splitDistance > raceLength;
-    splitBtn.textContent = splitDistance > raceLength ? "Ingen flere splits" : `${splitDistance} m`;
+
+    splitBtn.textContent =
+        splitDistance > raceLength
+            ? "Splits færdig"
+            : `${splitDistance} m`;
 }
 
 function renderSplits() {
@@ -607,6 +789,8 @@ function finalizeStopAll(now = Date.now()) {
 
     scheduleAutoClearGraphics();
 
+    startTowerPolling();
+
     pendingStopNow = null;
     updateStatus("Status: Sluttid beregnet", "statusStopped");
     saveState();
@@ -640,6 +824,9 @@ resetBtn.onclick = () => {
     pendingStopNow = null;
     hideVolteModal();
 
+    stopTowerPolling();
+    clearTowerInfo();
+
     mainTime.textContent = last1000Time.textContent = last500Time.textContent = "0:00.0";
     splitTable.innerHTML = finalTable.innerHTML = "";
 
@@ -653,7 +840,10 @@ offsetInput.onchange = e => {
 };
 
 rpuSelect.onchange = saveState;
-trackSelect.onchange = saveState;
+trackSelect.onchange = () => {
+    saveState();
+    if (towerPollingActive) updateTowerInfo();
+};
 
 function addRace() {
     races.push({ length: 2000, startType: "autostart", winnerVolte: 1 });

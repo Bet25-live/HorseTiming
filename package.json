@@ -1,6 +1,6 @@
 {
   "name": "horse-timer-app",
-  "version": "1.0.4",
+  "version": "1.0.7",
   "description": "Horse racing timer desktop app",
   "main": "main.js",
   "author": "Bet25",
@@ -35,12 +35,16 @@
       ],
       "category": "public.app-category.sports"
     },
-    "win": {
-      "target": "nsis"
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true
-    }
+  "win": {
+    "target": "nsis"
+  },
+
+"nsis": {
+  "oneClick": false,
+  "allowToChangeInstallationDirectory": true,
+  "allowElevation": true,
+  "deleteAppDataOnUninstall": false,
+  "include": "build/installer.nsh"
+}
   }
 }

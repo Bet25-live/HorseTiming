@@ -345,7 +345,7 @@ Vindervolte: <span id="currentWinnerVolte">-</span>
 </table>
 
 <div class="towerPanel">
-<h3>Tower info fra Companion</h3>
+<h3>Tower info</h3>
 <div class="towerGrid">
 <div><strong>Status:</strong> <span id="towerStatus">-</span></div>
 <div><strong>Race nr.:</strong> <span id="towerRaceNr">-</span></div>
@@ -437,6 +437,7 @@ let TIMING_SERVER_URL = "http://194.255.124.138:500/api/timing";
 let LOCAL_WS_PORT = 8080;
 let AUTO_CLEAR_SECONDS = 30;
 let autoClearTimer = null;
+const WEBSTREAM_TOWER_URL = "https://danskhv-tower.webstream.dk/Coronapanel/Ajax_client";
 
 let races = Array.from({ length: 10 }, () => ({
     length: 2000,
@@ -716,67 +717,74 @@ function getTowerVariableNames() {
 function setTowerValue(el, value) {
     el.textContent = value === undefined || value === null || value === "" ? "-" : String(value);
 }
+async function fetchWebstreamTowerData() {
+    const trackNumber = trackSelect.value;
 
-async function readCustomVariable(variableName) {
-    const urls = COMPANION_URLS.map(base => `${base}/${encodeURIComponent(variableName)}/value`);
+    const res = await fetch(WEBSTREAM_TOWER_URL, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"
+        },
+        body: new URLSearchParams({
+            tracknumber: trackNumber
+        }).toString()
+    });
 
-    for (const url of urls) {
-        try {
-            const res = await fetch(url, { method: "GET", cache: "no-store" });
-            if (!res.ok) continue;
-
-            const text = await res.text();
-
-            try {
-                const parsed = JSON.parse(text);
-                if (typeof parsed === "string") return parsed;
-                if (parsed && typeof parsed.value !== "undefined") return parsed.value;
-                if (parsed && typeof parsed.result !== "undefined") return parsed.result;
-            } catch {}
-
-            return text;
-        } catch (err) {
-            console.warn(`Kunne ikke læse ${variableName}`, err);
-        }
+    if (!res.ok) {
+        throw new Error(`Webstream fejl: ${res.status}`);
     }
 
-    return "-";
+    return await res.json();
+}
+
+function getEventForRace(items, raceNo, eventType) {
+    return items
+        .filter(item =>
+            String(item.raceno) === String(raceNo) &&
+            item.event_type === eventType &&
+            item.event_active === "true"
+        )
+        .sort((a, b) => Number(b.id) - Number(a.id))[0];
 }
 
 async function updateTowerInfo() {
-    const vars = getTowerVariableNames();
+    const trackName = TRACKS[trackSelect.value] || trackSelect.value;
+    const raceNo = currentRace + 1;
 
-    towerMeta.textContent = `Opdaterer fra ${TRACKS[trackSelect.value] || trackSelect.value}...`;
+    towerMeta.textContent = `Opdaterer fra Webstream · ${trackName} · Løb ${raceNo}...`;
 
-    const [
-        status,
-        raceNr,
-        winnerTime,
-        temp1st,
-        place1st,
-        place2nd,
-        place3rd
-    ] = await Promise.all([
-        readCustomVariable(vars.status),
-        readCustomVariable(vars.raceNr),
-        readCustomVariable(vars.winnerTime),
-        readCustomVariable(vars.temp1st),
-        readCustomVariable(vars.place1st),
-        readCustomVariable(vars.place2nd),
-        readCustomVariable(vars.place3rd)
-    ]);
+    try {
+        const items = await fetchWebstreamTowerData();
 
-    setTowerValue(towerStatus, status);
-    setTowerValue(towerRaceNr, raceNr);
-    setTowerValue(towerWinnerTime, winnerTime);
-    setTowerValue(towerTemp1st, temp1st);
-    setTowerValue(tower1stPlace, place1st);
-    setTowerValue(tower2ndPlace, place2nd);
-    setTowerValue(tower3rdPlace, place3rd);
+        const winnerTime = getEventForRace(items, raceNo, "winnertime");
+        const temp1st = getEventForRace(items, raceNo, "tempresult-1");
+        const result1 = getEventForRace(items, raceNo, "result-1");
+        const result2 = getEventForRace(items, raceNo, "result-2");
+        const result3 = getEventForRace(items, raceNo, "result-3");
 
-    towerMeta.textContent = `Senest opdateret: ${new Date().toLocaleTimeString("da-DK")} · Bane: ${TRACKS[trackSelect.value] || trackSelect.value}`;
+        setTowerValue(towerStatus, winnerTime ? "Resultat modtaget" : "Afventer resultat");
+        setTowerValue(towerRaceNr, raceNo);
+        setTowerValue(towerWinnerTime, winnerTime?.data || "-");
+        setTowerValue(towerTemp1st, temp1st?.runnerno || "-");
+        setTowerValue(tower1stPlace, result1?.runnerno || "-");
+        setTowerValue(tower2ndPlace, result2?.runnerno || "-");
+        setTowerValue(tower3rdPlace, result3?.runnerno || "-");
+
+        const latestTimestamp =
+            winnerTime?.timestamp ||
+            result1?.timestamp ||
+            temp1st?.timestamp ||
+            "-";
+
+        towerMeta.textContent =
+            `Senest opdateret: ${new Date().toLocaleTimeString("da-DK")} · ` +
+            `Bane: ${trackName} · Løb: ${raceNo} · Webstream: ${latestTimestamp}`;
+
+    } catch (err) {
+        console.warn("Kunne ikke hente Webstream tower-data", err);
+        towerMeta.textContent = `Fejl ved hentning fra Webstream · ${trackName}`;
+    }
 }
-
 function startTowerPolling() {
     stopTowerPolling();
     towerPollingActive = true;

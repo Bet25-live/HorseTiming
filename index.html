@@ -624,6 +624,20 @@ function loadState() {
     } catch {}
 }
 
+function applyDefaultRaceLengthForTrack() {
+    const defaultLength = TRACK_DEFAULT_LENGTHS[trackSelect.value];
+
+    if (!defaultLength) return;
+
+    races = races.map(race => ({
+        ...race,
+        length: defaultLength
+    }));
+
+    renderRaces();
+    saveState();
+}
+
 function sendTimingData(values) {
     COMPANION_URLS.forEach(url => {
         for (let k in values) {
@@ -674,6 +688,16 @@ const TRACKS = {
     "8": "Nykøbing",
     "9": "Bornholm",
     "10": "Klampenborg"
+};
+const TRACK_DEFAULT_LENGTHS = {
+    "1": 2000,  // Lunden
+    "2": 1800,  // Aarhus
+    "5": 2140,  // Odense
+    "6": 2060,  // Skive
+    "7": 2140,  // Aalborg
+    "8": 2140,  // Nykøbing
+    "9": 1860,  // Bornholm
+    "10": 2000  // Klampenborg
 };
 
 function getTowerVariableNames() {
@@ -1037,8 +1061,7 @@ function finalizeStopAll(now = Date.now()) {
     updateStatus("Status: Sluttid beregnet", "statusStopped");
     saveState();
 }
-
-resetBtn.onclick = () => {
+function resetTimerOnly() {
     if (autoClearTimer) {
         clearTimeout(autoClearTimer);
         autoClearTimer = null;
@@ -1051,14 +1074,6 @@ resetBtn.onclick = () => {
     elapsedBeforePause = 0;
     startBtn.textContent = "Start";
 
-    sendTimingData({
-        split500:null,
-        split1000:null,
-        last1000:null,
-        last500:null,
-        race_time:null
-    });
-
     splits = [];
     splitDistance = 500;
     last1000Start = null;
@@ -1069,13 +1084,29 @@ resetBtn.onclick = () => {
     stopTowerPolling();
     clearTowerInfo();
 
-    mainTime.textContent = last1000Time.textContent = last500Time.textContent = "0:00.0";
-    splitTable.innerHTML = finalTable.innerHTML = "";
+    mainTime.textContent = "0:00.0";
+    last1000Time.textContent = "0:00.0";
+    last500Time.textContent = "0:00.0";
+
+    splitTable.innerHTML = "";
+    finalTable.innerHTML = "";
 
     updateStatus("Status: Nulstillet", "statusStopped");
+}
+resetBtn.onclick = () => {
+    sendTimingData({
+        split500: null,
+        split1000: null,
+        last1000: null,
+        last500: null,
+        race_time: null
+    });
+
+    resetTimerOnly();
     nextRace();
 };
 
+    
 offsetInput.onchange = e => {
     raceTimeOffset = Number(e.target.value) || 0;
     saveState();
@@ -1083,10 +1114,10 @@ offsetInput.onchange = e => {
 
 rpuSelect.onchange = saveState;
 trackSelect.onchange = () => {
-    saveState();
+    applyDefaultRaceLengthForTrack();
+
     if (towerPollingActive) updateTowerInfo();
 };
-
 function addRace() {
     races.push({ length: 2000, startType: "autostart", winnerVolte: 1 });
     renderRaces();
@@ -1094,13 +1125,19 @@ function addRace() {
 }
 
 function nextRace() {
+    resetTimerOnly();
+
     if (currentRace < races.length - 1) currentRace++;
+
     renderRaces();
     saveState();
 }
 
 function prevRace() {
+    resetTimerOnly();
+
     if (currentRace > 0) currentRace--;
+
     renderRaces();
     saveState();
 }

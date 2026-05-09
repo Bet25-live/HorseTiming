@@ -329,6 +329,7 @@ Vindervolte: <span id="currentWinnerVolte">-</span>
 <button id="last1000Btn">Sidste 1000 m</button>
 <button id="last500Btn">Sidste 500 m</button>
 <button id="stopAllBtn">Stop alle</button>
+<button id="restartBtn">Omstart</button>
 <button id="resetBtn">Næste løb</button>
 </div>
 
@@ -509,6 +510,7 @@ function connectWebSocket() {
                 case "LAST_1000": last1000Btn.click(); break;
                 case "LAST_500": last500Btn.click(); break;
                 case "STOP_ALL": stopAllBtn.click(); break;
+                case "RESTART": restartBtn.click(); break;
                 case "RESET": resetBtn.click(); break;
                 case "1":
                 case "2":
@@ -1113,7 +1115,20 @@ resetBtn.onclick = () => {
     resetTimerOnly();
     nextRace();
 };
+restartBtn.onclick = () => {
+    sendTimingData({
+        split500: null,
+        split1000: null,
+        last1000: null,
+        last500: null,
+        race_time: null
+    });
 
+    resetTimerOnly();
+
+    renderRaces();
+    saveState();
+};
     
 offsetInput.onchange = e => {
     raceTimeOffset = Number(e.target.value) || 0;

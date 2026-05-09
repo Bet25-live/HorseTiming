@@ -439,7 +439,7 @@ let LOCAL_WS_PORT = 8080;
 let AUTO_CLEAR_SECONDS = 30;
 let autoClearTimer = null;
 const WEBSTREAM_TOWER_URL = "https://danskhv-tower.webstream.dk/Coronapanel/Ajax_client";
-
+const RACE_PROGRAM_API = "http://194.255.124.138:500/api/race-program";
 let races = Array.from({ length: 10 }, () => ({
     length: 2000,
     startType: "autostart",
@@ -488,7 +488,38 @@ async function loadAppSettings() {
     settingCompanionUrl1.value = COMPANION_URLS[0] || "";
     settingCompanionUrl2.value = COMPANION_URLS[1] || "";
 }
+async function loadRaceProgram() {
+    try {
+        const today = new Date().toISOString().split("T")[0];
 
+        const res = await fetch(
+            `${RACE_PROGRAM_API}?date=${today}&track=${trackSelect.value}`
+        );
+
+        const json = await res.json();
+
+        if (!json.ok || !Array.isArray(json.races)) {
+            console.warn("Kunne ikke hente løbsprogram");
+            return;
+        }
+
+        races = json.races.map(r => ({
+            length: Number(r.length) || 2000,
+            startType: r.startType || "autostart",
+            winnerVolte: 1
+        }));
+
+        currentRace = 0;
+
+        renderRaces();
+        saveState();
+
+        console.log("Løbsprogram hentet", json);
+
+    } catch (err) {
+        console.warn("Fejl ved hentning af løbsprogram", err);
+    }
+}
 function connectWebSocket() {
     try {
         ws = new WebSocket(`ws://127.0.0.1:${LOCAL_WS_PORT}`);
@@ -1136,11 +1167,14 @@ offsetInput.onchange = e => {
 };
 
 rpuSelect.onchange = saveState;
-trackSelect.onchange = () => {
+trackSelect.onchange = async () => {
     applyDefaultRaceLengthForTrack();
+
+    await loadRaceProgram();
 
     if (towerPollingActive) updateTowerInfo();
 };
+
 function addRace() {
     races.push({ length: 2000, startType: "autostart", winnerVolte: 1 });
     renderRaces();
@@ -1189,7 +1223,7 @@ document.addEventListener("keydown", e => {
     }
 });
 
-loadAppSettings().then(() => {
+loadAppSettings().then(async () => {
     clearInterval(interval);
 
     running = false;
@@ -1208,10 +1242,13 @@ loadAppSettings().then(() => {
 
     startBtn.textContent = "Start";
 
-    loadState();
-    renderRaces();
-    connectWebSocket();
-    updateStatus("Status: Klar", "statusStopped");
+loadState();
+renderRaces();
+
+await loadRaceProgram();
+
+connectWebSocket();
+updateStatus("Status: Klar", "statusStopped");
 });
 </script>
 </body>

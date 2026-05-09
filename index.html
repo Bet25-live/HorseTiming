@@ -408,6 +408,13 @@ Vindervolte: <span id="currentWinnerVolte">-</span>
 </div>
 
 <div class="settingsField">
+<label>
+<input id="settingBlockShortTimes" type="checkbox">
+Blokér tider under 1 minut
+</label>
+</div>
+
+<div class="settingsField">
 <label>Companion URL 1</label>
 <input id="settingCompanionUrl1">
 </div>
@@ -437,6 +444,7 @@ let COMPANION_URLS = [
 let TIMING_SERVER_URL = "http://194.255.124.138:500/api/timing";
 let LOCAL_WS_PORT = 8080;
 let AUTO_CLEAR_SECONDS = 30;
+let BLOCK_SHORT_TIMES = true;
 let autoClearTimer = null;
 const WEBSTREAM_TOWER_URL = "https://danskhv-tower.webstream.dk/Coronapanel/Ajax_client";
 const RACE_PROGRAM_API = "http://194.255.124.138:500/api/race-program";
@@ -468,6 +476,8 @@ async function loadAppSettings() {
     TIMING_SERVER_URL = settings.timingServerUrl || TIMING_SERVER_URL;
     LOCAL_WS_PORT = Number(settings.localWsPort) || 8080;
     AUTO_CLEAR_SECONDS = Number(settings.autoClearSeconds) || 30;
+    BLOCK_SHORT_TIMES = settings.blockShortTimes !== false;
+settingBlockShortTimes.checked = BLOCK_SHORT_TIMES;
 
     if (Array.isArray(settings.companionUrls)) {
         COMPANION_URLS = settings.companionUrls.filter(Boolean);
@@ -571,6 +581,7 @@ closeSettingsBtn.onclick = () => {
 };
 
 saveSettingsBtn.onclick = async () => {
+    
     const timingUrl = settingTimingServerUrl.value.trim();
 
     const oldSettings = await window.appSettings.get();
@@ -588,6 +599,7 @@ saveSettingsBtn.onclick = async () => {
         timingServerUrlHistory: newHistory,
         localWsPort: Number(settingLocalWsPort.value) || 8080,
         autoClearSeconds: Number(settingAutoClearSeconds.value) || 30,
+        blockShortTimes: settingBlockShortTimes.checked,
         companionUrls: [
             settingCompanionUrl1.value.trim(),
             settingCompanionUrl2.value.trim()
@@ -599,6 +611,7 @@ saveSettingsBtn.onclick = async () => {
     TIMING_SERVER_URL = newSettings.timingServerUrl;
     LOCAL_WS_PORT = newSettings.localWsPort;
     AUTO_CLEAR_SECONDS = newSettings.autoClearSeconds;
+    BLOCK_SHORT_TIMES = newSettings.blockShortTimes;
     COMPANION_URLS = newSettings.companionUrls;
 
     settingsModal.classList.remove("show");
@@ -671,8 +684,40 @@ function applyDefaultRaceLengthForTrack() {
     renderRaces();
     saveState();
 }
+function parseFormattedTimeToMs(value) {
+    const match = String(value).match(/^(\d+):(\d{2})\.(\d)$/);
+
+    if (!match) return 60000;
+
+    const minutes = Number(match[1]);
+    const seconds = Number(match[2]);
+    const tenths = Number(match[3]);
+
+    return ((minutes * 60) + seconds) * 1000 + tenths * 100;
+}
+
 
 function sendTimingData(values) {
+    if (BLOCK_SHORT_TIMES) {
+    const filteredValues = { ...values };
+
+    for (const key in filteredValues) {
+        const value = filteredValues[key];
+
+        if (
+            typeof value === "string" &&
+            value !== null &&
+            value !== "" &&
+            value !== "-" &&
+            value !== "0:00.0" &&
+            parseFormattedTimeToMs(value) < 60000
+        ) {
+            filteredValues[key] = null;
+        }
+    }
+
+    values = filteredValues;
+}
     COMPANION_URLS.forEach(url => {
         for (let k in values) {
             fetch(`${url}/${k}/value?value=${encodeURIComponent(values[k])}`, {

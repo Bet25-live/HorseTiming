@@ -101,6 +101,25 @@ input {
     font-size: 16px;
 }
 
+.bigTimePopup {
+    position: fixed;
+    top: 45%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: #111;
+    color: #fff;
+    font-size: 64px;
+    font-weight: 700;
+    padding: 30px 50px;
+    border-radius: 18px;
+    z-index: 10000;
+    display: none;
+}
+
+.bigTimePopup.show {
+    display: block;
+}
+
 .statusBar strong {
     font-weight: 700;
 }
@@ -408,6 +427,11 @@ Vindervolte: <span id="currentWinnerVolte">-</span>
 </div>
 
 <div class="settingsField">
+<label>Popup visning i sekunder</label>
+<input id="settingBigPopupSeconds" type="number" min="1">
+</div>
+
+<div class="settingsField">
 <label>
 <input id="settingBlockShortTimes" type="checkbox">
 Blokér tider under 1 minut
@@ -444,6 +468,7 @@ let COMPANION_URLS = [
 let TIMING_SERVER_URL = "http://194.255.124.138:500/api/timing";
 let LOCAL_WS_PORT = 8080;
 let AUTO_CLEAR_SECONDS = 30;
+let BIG_POPUP_SECONDS = 10;
 let BLOCK_SHORT_TIMES = true;
 let autoClearTimer = null;
 const WEBSTREAM_TOWER_URL = "https://danskhv-tower.webstream.dk/Coronapanel/Ajax_client";
@@ -476,6 +501,9 @@ async function loadAppSettings() {
     TIMING_SERVER_URL = settings.timingServerUrl || TIMING_SERVER_URL;
     LOCAL_WS_PORT = Number(settings.localWsPort) || 8080;
     AUTO_CLEAR_SECONDS = Number(settings.autoClearSeconds) || 30;
+        BIG_POPUP_SECONDS = Number(settings.bigPopupSeconds) || 10;
+
+settingBigPopupSeconds.value = BIG_POPUP_SECONDS;
     BLOCK_SHORT_TIMES = settings.blockShortTimes !== false;
 settingBlockShortTimes.checked = BLOCK_SHORT_TIMES;
 
@@ -599,12 +627,14 @@ saveSettingsBtn.onclick = async () => {
         timingServerUrlHistory: newHistory,
         localWsPort: Number(settingLocalWsPort.value) || 8080,
         autoClearSeconds: Number(settingAutoClearSeconds.value) || 30,
+        bigPopupSeconds: Number(settingBigPopupSeconds.value) || 10,
         blockShortTimes: settingBlockShortTimes.checked,
         companionUrls: [
             settingCompanionUrl1.value.trim(),
             settingCompanionUrl2.value.trim()
         ].filter(Boolean)
     };
+    BIG_POPUP_SECONDS = newSettings.bigPopupSeconds;
 
     await window.appSettings.set(newSettings);
 
@@ -694,6 +724,22 @@ function parseFormattedTimeToMs(value) {
     const tenths = Number(match[3]);
 
     return ((minutes * 60) + seconds) * 1000 + tenths * 100;
+}
+
+let popupTimer = null;
+
+function showBigPopup(text) {
+    bigTimePopup.textContent = text;
+
+    bigTimePopup.classList.add("show");
+
+    if (popupTimer) {
+        clearTimeout(popupTimer);
+    }
+
+    popupTimer = setTimeout(() => {
+        bigTimePopup.classList.remove("show");
+    }, BIG_POPUP_SECONDS * 1000);
 }
 
 
@@ -1028,8 +1074,21 @@ splitBtn.onclick = () => {
     const pace = time / (splitDistance / 1000);
     splits.push({ dist: splitDistance, time, pace });
 
-    if (splits.length === 1) sendTimingData({ split500: format(pace) });
-    if (splits.length === 2) sendTimingData({ split1000: format(pace) });
+if (splits.length === 1) {
+    const formatted = format(pace);
+
+    sendTimingData({ split500: formatted });
+
+    showBigPopup(`500 m: ${formatted}`);
+}
+
+if (splits.length === 2) {
+    const formatted = format(pace);
+
+    sendTimingData({ split1000: formatted });
+
+    showBigPopup(`1000 m: ${formatted}`);
+}
 
     if (splitDistance === 500) {
         splitDistance = 1000;
@@ -1287,6 +1346,8 @@ loadAppSettings().then(async () => {
 
     startBtn.textContent = "Start";
 
+
+
 loadState();
 renderRaces();
 
@@ -1295,6 +1356,9 @@ await loadRaceProgram();
 connectWebSocket();
 updateStatus("Status: Klar", "statusStopped");
 });
+
+
 </script>
+<div id="bigTimePopup" class="bigTimePopup"></div>
 </body>
 </html>

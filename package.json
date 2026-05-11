@@ -35,15 +35,16 @@
       ],
       "category": "public.app-category.sports"
     },
-    "win": {
-      "target": "nsis"
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "allowElevation": true,
-      "deleteAppDataOnUninstall": false,
-      "include": "build/installer.nsh"
-    }
+  "win": {
+    "target": "nsis"
+  },
+
+"nsis": {
+  "oneClick": false,
+  "allowToChangeInstallationDirectory": true,
+  "allowElevation": true,
+  "deleteAppDataOnUninstall": false,
+  "include": "build/installer.nsh"
+}
   }
 }

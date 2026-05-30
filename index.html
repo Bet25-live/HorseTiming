@@ -316,6 +316,7 @@ th {
 </label>
 
 <button id="settingsBtn">⚙ Settings</button>
+<button id="testGraphicsBtn">🧪 Test grafik</button>
 </div>
 
 <div class="timers">
@@ -492,6 +493,41 @@ let raceTimeOffset = 0;
 let pendingStopCalculation = false;
 let pendingStopNow = null;
 let ws = null;
+
+function wait(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+testGraphicsBtn.onclick = async () => {
+    testGraphicsBtn.disabled = true;
+    updateStatus("Status: Tester grafik", "statusPaused");
+
+    sendTimingData({
+        split500: "1:00.0"
+    });
+    showBigPopup("TEST 500 m: 1:00.0");
+
+    await wait(3000);
+
+    sendTimingData({
+        split1000: "1:00.0"
+    });
+    showBigPopup("TEST 1000 m: 1:00.0");
+
+    await wait(3000);
+
+    sendTimingData({
+        last1000: "1:00.0",
+        last500: "1:00.0",
+        race_time: "1:00.0"
+    });
+    showBigPopup("TEST SLUT: 1:00.0");
+
+    scheduleAutoClearGraphics();
+
+    updateStatus("Status: Grafiktest sendt", "statusStopped");
+    testGraphicsBtn.disabled = false;
+};
 
 async function loadAppSettings() {
     if (!window.appSettings) return;

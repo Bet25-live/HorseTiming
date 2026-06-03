@@ -312,7 +312,7 @@ th {
 </label>
 
 <label>Offset:
-<input type="number" id="offsetInput" value="0" style="width:90px;">
+<input type="text" id="offsetInput" value="0" inputmode="numeric" style="width:90px;">
 </label>
 
 <button id="settingsBtn">⚙ Settings</button>
@@ -975,7 +975,15 @@ function clearTowerInfo() {
 }
 
 function updateCurrentRaceLength() {
+    if (!races.length) return;
+
+    if (currentRace >= races.length) {
+        currentRace = 0;
+    }
+
     const race = getRace();
+    if (!race) return;
+
     currentRaceLength.textContent = race.length;
     currentRaceStartType.textContent = race.startType === "voltestart" ? "Voltestart" : "Autostart";
     currentWinnerVolte.textContent = race.startType === "voltestart" ? race.winnerVolte : "-";
@@ -1008,7 +1016,7 @@ function renderRaces() {
     raceTable.innerHTML = races.map((r, i) => `
         <tr class="${i === currentRace ? "activeRace" : ""}">
             <td>${i + 1}</td>
-            <td><input type="number" value="${r.length}" onchange="updateRaceLength(${i}, this.value)"></td>
+            <td><input type="text" inputmode="numeric" value="${r.length}" onchange="updateRaceLength(${i}, this.value)"></td>
             <td>
                 <select onchange="updateRaceStartType(${i}, this.value)">
                     <option value="autostart" ${r.startType === "autostart" ? "selected" : ""}>Autostart</option>

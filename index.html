@@ -694,6 +694,10 @@ function getRace() {
     return races[currentRace];
 }
 
+function isCurrentRace2000m() {
+    return Number(getRace()?.length) === 2000;
+}
+
 function removeInputFocus() {
     if (document.activeElement) {
         document.activeElement.blur();
@@ -1135,6 +1139,10 @@ if (splits.length === 1) {
 if (splits.length === 2) {
     const formatted = format(pace);
 
+    if (isCurrentRace2000m()) {
+        last1000Start = Date.now();
+    }
+
     sendTimingData({ split1000: formatted });
 
     showBigPopup(`1000 m: ${formatted}`);
@@ -1152,6 +1160,21 @@ if (splits.length === 2) {
 
 last1000Btn.onclick = () => {
     last1000Start = Date.now();
+
+    if (isCurrentRace2000m() && splits.length < 2) {
+        const time = getMainElapsed();
+        const pace = time;
+
+        splits.push({ dist: 1000, time, pace });
+        splitDistance = 999999;
+
+        renderSplits();
+        updateSplitButton();
+
+        sendTimingData({ split1000: format(pace) });
+
+        showBigPopup(`1000 m: ${format(pace)}`);
+    }
 };
 
 last500Btn.onclick = () => {

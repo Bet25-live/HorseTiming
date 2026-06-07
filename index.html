@@ -694,6 +694,12 @@ function getRace() {
     return races[currentRace];
 }
 
+function removeInputFocus() {
+    if (document.activeElement) {
+        document.activeElement.blur();
+    }
+}
+
 function getMainElapsed(now = Date.now()) {
     if (!startTime) return elapsedBeforePause;
     return elapsedBeforePause + (now - startTime);
@@ -1335,6 +1341,8 @@ function nextRace() {
     if (currentRace < races.length - 1) currentRace++;
 
     renderRaces();
+    removeInputFocus();
+    window.scrollTo(0, 0);
     saveState();
 }
 
@@ -1344,6 +1352,8 @@ function prevRace() {
     if (currentRace > 0) currentRace--;
 
     renderRaces();
+    removeInputFocus();
+    window.scrollTo(0, 0);
     saveState();
 }
 

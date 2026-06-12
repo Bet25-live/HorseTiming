@@ -594,11 +594,25 @@ async function loadRaceProgram() {
         console.warn("Fejl ved hentning af løbsprogram", err);
     }
 }
+let wsReconnectTimer = null;
+
 function connectWebSocket() {
     try {
+        if (ws) {
+            try { ws.close(); } catch {}
+            ws = null;
+        }
+
         ws = new WebSocket(`ws://127.0.0.1:${LOCAL_WS_PORT}`);
 
-        ws.onopen = () => console.log("UI connected to local websocket");
+        ws.onopen = () => {
+            console.log("UI connected to local websocket");
+
+            if (wsReconnectTimer) {
+                clearTimeout(wsReconnectTimer);
+                wsReconnectTimer = null;
+            }
+        };
 
         ws.onmessage = (event) => {
             let msg = String(event.data).trim();
@@ -628,10 +642,30 @@ function connectWebSocket() {
             }
         };
 
-        ws.onerror = err => console.warn("WebSocket fejl:", err);
-        ws.onclose = () => console.warn("WebSocket lukket");
+        ws.onerror = err => {
+            console.warn("WebSocket fejl:", err);
+        };
+
+        ws.onclose = () => {
+            console.warn("WebSocket lukket - prøver at forbinde igen om 3 sekunder");
+
+            if (wsReconnectTimer) return;
+
+            wsReconnectTimer = setTimeout(() => {
+                wsReconnectTimer = null;
+                connectWebSocket();
+            }, 3000);
+        };
+
     } catch (err) {
         console.warn("WebSocket kunne ikke oprettes:", err);
+
+        if (!wsReconnectTimer) {
+            wsReconnectTimer = setTimeout(() => {
+                wsReconnectTimer = null;
+                connectWebSocket();
+            }, 3000);
+        }
     }
 }
 

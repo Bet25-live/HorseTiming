@@ -1312,13 +1312,14 @@ function finalizeStopAll(now = Date.now()) {
     updateStatus("Status: Sluttid beregnet", "statusStopped");
     saveState();
 }
-function resetTimerOnly() {
-    if (autoClearTimer) {
+function resetTimerOnly(keepAutoClear = false) {
+    if (!keepAutoClear && autoClearTimer) {
         clearTimeout(autoClearTimer);
         autoClearTimer = null;
     }
 
     clearInterval(interval);
+}
 
     running = false;
     startTime = null;
@@ -1392,7 +1393,7 @@ function addRace() {
 }
 
 function nextRace() {
-    resetTimerOnly();
+    resetTimerOnly(true);
 
     if (currentRace < races.length - 1) currentRace++;
 
@@ -1403,7 +1404,7 @@ function nextRace() {
 }
 
 function prevRace() {
-    resetTimerOnly();
+    resetTimerOnly(true);
 
     if (currentRace > 0) currentRace--;
 

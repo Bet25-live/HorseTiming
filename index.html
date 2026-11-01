@@ -240,6 +240,47 @@ th {
     margin-bottom: 8px;
 }
 
+.updateBanner {
+    display: none;
+    padding: 10px 14px;
+    border-radius: 7px;
+    margin-bottom: 10px;
+    font-size: 14px;
+    align-items: center;
+    gap: 10px;
+}
+
+.updateBanner.show {
+    display: flex;
+}
+
+.updateBanner.downloading {
+    background: #e8f0fe;
+    border: 1px solid #a8c7fa;
+}
+
+.updateBanner.ready {
+    background: #e6f4ea;
+    border: 1px solid #81c995;
+}
+
+.updateBanner button {
+    margin-left: auto;
+    padding: 6px 14px;
+    background: #1a73e8;
+    color: #fff;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 13px;
+}
+
+.versionLabel {
+    font-size: 12px;
+    color: #888;
+    margin-left: auto;
+}
+
 /* Compact mode for half-screen windows */
 @media (max-height: 820px) {
     body {
@@ -286,7 +327,15 @@ th {
 
 <body>
 
+<div style="display:flex;align-items:baseline;">
 <h2>Hestevæddeløb Timer – Løb <span id="raceNumberDisplay">1</span></h2>
+<span id="versionLabel" class="versionLabel"></span>
+</div>
+
+<div id="updateBanner" class="updateBanner">
+<span id="updateMessage"></span>
+<button id="installUpdateBtn" style="display:none;" onclick="window.appUpdater.install()">Installer og genstart</button>
+</div>
 
 <div class="topControls">
 <label>RPU:
@@ -1437,6 +1486,41 @@ document.addEventListener("keydown", e => {
         case "ArrowRight": nextRace(); break;
     }
 });
+
+if (window.appInfo) {
+    window.appInfo.getVersion().then(v => {
+        versionLabel.textContent = "v" + v;
+    });
+}
+
+if (window.appUpdater) {
+    window.appUpdater.onStatus((data) => {
+        const banner = document.getElementById("updateBanner");
+        const msg = document.getElementById("updateMessage");
+        const btn = document.getElementById("installUpdateBtn");
+
+        switch (data.status) {
+            case "downloading":
+                banner.className = "updateBanner downloading show";
+                msg.textContent = data.percent
+                    ? `Downloader opdatering v${data.version || ""}... ${data.percent}%`
+                    : `Ny version ${data.version} fundet – downloader...`;
+                btn.style.display = "none";
+                break;
+            case "ready":
+                banner.className = "updateBanner ready show";
+                msg.textContent = `Version ${data.version} er klar til installation`;
+                btn.style.display = "";
+                break;
+            case "up-to-date":
+                banner.className = "updateBanner";
+                break;
+            case "error":
+                banner.className = "updateBanner";
+                break;
+        }
+    });
+}
 
 loadAppSettings().then(async () => {
     clearInterval(interval);

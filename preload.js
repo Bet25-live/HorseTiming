@@ -12,3 +12,17 @@ contextBridge.exposeInMainWorld("electronWs", {
     });
   }
 });
+
+contextBridge.exposeInMainWorld("appUpdater", {
+  onStatus: (callback) => {
+    ipcRenderer.on("update-status", (event, data) => {
+      callback(data);
+    });
+  },
+  install: () => ipcRenderer.invoke("updater:install"),
+  check: () => ipcRenderer.invoke("updater:check")
+});
+
+contextBridge.exposeInMainWorld("appInfo", {
+  getVersion: () => ipcRenderer.invoke("app:getVersion")
+});

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require("electron");
+const { app, BrowserWindow, ipcMain, globalShortcut } = require("electron");
 const path = require("path");
 const { autoUpdater } = require("electron-updater");
 
@@ -10,7 +10,30 @@ const {
   stopLocalWebSocketServer
 } = require("./local-ws-server");
 
+const { configurePresenter, unregisterPresenter } = require("./presenter");
+
 let mainWindow = null;
+let presenterStatus = { enabled: false, registered: [], failed: [] };
+
+function applyPresenterSettings() {
+  const s = store.store || {};
+
+  presenterStatus = configurePresenter(
+    {
+      enabled: !!s.presenterEnabled,
+      navKeys: s.presenterNavKeys,
+      blankKey: s.presenterBlankKey,
+      blankAction: s.presenterBlankAction
+    },
+    (action, key) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send("presenter-command", { action, key });
+      }
+    }
+  );
+
+  return presenterStatus;
+}
 
 autoUpdater.autoDownload = true;
 autoUpdater.autoInstallOnAppQuit = true;
@@ -87,6 +110,14 @@ app.whenReady().then(() => {
     return app.getVersion();
   });
 
+  ipcMain.handle("presenter:apply", () => {
+    return applyPresenterSettings();
+  });
+
+  ipcMain.handle("presenter:status", () => {
+    return presenterStatus;
+  });
+
   const settings = store.store || {};
   const wsPort = Number(settings.localWsPort) || 8080;
 
@@ -99,6 +130,7 @@ app.whenReady().then(() => {
 }, wsPort);
 
   createWindow();
+  applyPresenterSettings();
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -114,4 +146,9 @@ app.on("window-all-closed", () => {
 
 app.on("before-quit", () => {
   stopLocalWebSocketServer();
+});
+
+app.on("will-quit", () => {
+  unregisterPresenter();
+  globalShortcut.unregisterAll();
 });

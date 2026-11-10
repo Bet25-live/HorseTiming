@@ -23,6 +23,16 @@ contextBridge.exposeInMainWorld("appUpdater", {
   check: () => ipcRenderer.invoke("updater:check")
 });
 
+contextBridge.exposeInMainWorld("presenter", {
+  onCommand: (callback) => {
+    ipcRenderer.on("presenter-command", (event, data) => {
+      callback(data);
+    });
+  },
+  apply: () => ipcRenderer.invoke("presenter:apply"),
+  status: () => ipcRenderer.invoke("presenter:status")
+});
+
 contextBridge.exposeInMainWorld("appInfo", {
   getVersion: () => ipcRenderer.invoke("app:getVersion")
 });

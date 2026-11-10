@@ -124,6 +124,27 @@ input {
     font-weight: 700;
 }
 
+.presenterBar {
+    margin: -4px 0 10px;
+    padding: 9px 12px;
+    border-radius: 7px;
+    border: 1px dashed #7a5cff;
+    background: #f3f0ff;
+    font-size: 16px;
+    display: none;
+    transition: background .15s;
+}
+
+.presenterBar.show { display: block; }
+.presenterBar.flash { background: #c9f2c9; border-style: solid; border-color: #2e8b57; }
+.presenterBar.warn { background: #ffe1e1; border-style: solid; border-color: #c0392b; }
+
+#presenterToggleBtn.on {
+    background: #7a5cff;
+    color: #fff;
+    border-color: #7a5cff;
+}
+
 .statusRunning { background:#e8f7e8; }
 .statusPaused { background:#fff4d6; }
 .statusStopped { background:#f8f8f8; }
@@ -365,6 +386,7 @@ th {
 
 <button id="settingsBtn">⚙ Settings</button>
 <button id="testGraphicsBtn">🧪 Test grafik</button>
+<button id="presenterToggleBtn" title="Styr uret med en trådløs presenter (fx Logitech R400)">🎯 Presenter: FRA</button>
 </div>
 
 <div class="timers">
@@ -379,22 +401,17 @@ Vindervolte: <span id="currentWinnerVolte">-</span>
 </div>
 
 <div class="timerBox">
-<div class="timerTitle">Sidste 1000 m</div>
-<div class="timerValue"><span id="last1000Time">0:00.0</span></div>
-</div>
-
-<div class="timerBox">
 <div class="timerTitle">Sidste 500 m</div>
 <div class="timerValue"><span id="last500Time">0:00.0</span></div>
 </div>
 </div>
 
 <div id="statusBar" class="statusBar statusStopped"><strong>Status:</strong> Klar</div>
+<div id="presenterBar" class="presenterBar"></div>
 
 <div class="buttonRow">
 <button id="startBtn">Start</button>
 <button id="splitBtn">500 m</button>
-<button id="last1000Btn">Sidste 1000m</button>
 <button id="last500Btn">Sidste 500m</button>
 <button id="stopAllBtn">Stop alle</button>
 <button id="restartBtn">Omstart</button>
@@ -497,6 +514,49 @@ Blokér tider under 1 minut
 <input id="settingCompanionUrl2">
 </div>
 
+<h4 style="margin:18px 0 6px;">🎯 Presenter (fx Logitech R400)</h4>
+
+<div class="settingsField">
+<label>Tastetester – slå presenter FRA, klik i feltet og tryk på en knap</label>
+<input id="presenterKeyTester" readonly placeholder="Tryk på en presenter-knap…">
+</div>
+
+<div class="settingsField">
+<label>Presenterens frem/tilbage-knapper sender (begge går videre til næste punkt)</label>
+<select id="settingPresenterNavKeys">
+<option value="PAGE">Page Down / Page Up</option>
+<option value="ARROWS">Højre pil / venstre pil</option>
+</select>
+</div>
+
+<div class="settingsField">
+<label>Sort skærm-knap sender tasten</label>
+<select id="settingPresenterBlankKey">
+<option value=".">. (punktum)</option>
+<option value="B">B</option>
+<option value="NONE">Brug ikke knappen</option>
+</select>
+</div>
+
+<div class="settingsField">
+<label>Sort skærm-knap</label>
+<select id="settingPresenterBlankAction">
+<option value="NEXT">Næste punkt (smart)</option>
+<option value="SKIP">Spring næste punkt over</option>
+<option value="START_TOGGLE">Start / pause</option>
+<option value="SPLIT">Split (500/1000 m)</option>
+<option value="LAST_500">Sidste 500 m</option>
+<option value="STOP_ALL">Stop alle (mål)</option>
+<option value="NONE">Ingen</option>
+</select>
+</div>
+
+<p style="font-size:.9em;color:#666;margin-top:0;">
+Når presenter-tilstand er slået til, fanges tasterne globalt på denne PC
+og kan ikke bruges i andre programmer. Med piletaster valgt kan man heller ikke
+skifte løb med pilene, mens presenter er slået til. Afspil-knappen (F5/Esc) bruges ikke.
+</p>
+
 <button id="saveSettingsBtn">Gem settings</button>
 <button id="closeSettingsBtn">Luk</button>
 
@@ -535,11 +595,18 @@ let interval = null;
 let running = false;
 let splitDistance = 500;
 let splits = [];
-let last1000Start = null;
 let last500Start = null;
 let raceTimeOffset = 0;
 let pendingStopCalculation = false;
 let pendingStopNow = null;
+
+// Presenter
+let PRESENTER_ENABLED = false;
+let raceStopped = false;
+let presenterSkipped = new Set();
+let lastPresenterStepAt = 0;
+let presenterFlashTimer = null;
+const PRESENTER_STEP_GUARD_MS = 1000;
 let ws = null;
 
 function wait(ms) {
@@ -565,7 +632,6 @@ testGraphicsBtn.onclick = async () => {
     await wait(3000);
 
     sendTimingData({
-        last1000: "1:00.0",
         last500: "1:00.0",
         race_time: "1:00.0"
     });
@@ -609,6 +675,12 @@ settingBlockShortTimes.checked = BLOCK_SHORT_TIMES;
     settingAutoClearSeconds.value = AUTO_CLEAR_SECONDS;
     settingCompanionUrl1.value = COMPANION_URLS[0] || "";
     settingCompanionUrl2.value = COMPANION_URLS[1] || "";
+
+    PRESENTER_ENABLED = !!settings.presenterEnabled;
+    settingPresenterNavKeys.value = settings.presenterNavKeys || "PAGE";
+    settingPresenterBlankKey.value = settings.presenterBlankKey || ".";
+    settingPresenterBlankAction.value = settings.presenterBlankAction || "STOP_ALL";
+    updatePresenterToggle();
 }
 async function loadRaceProgram() {
     try {
@@ -671,23 +743,7 @@ function connectWebSocket() {
                 }
             } catch {}
 
-            switch (msg) {
-                case "START_TOGGLE": startBtn.click(); break;
-                case "SPLIT": splitBtn.click(); break;
-                case "LAST_1000": last1000Btn.click(); break;
-                case "LAST_500": last500Btn.click(); break;
-                case "STOP_ALL": stopAllBtn.click(); break;
-                case "RESTART": restartBtn.click(); break;
-                case "RESET": resetBtn.click(); break;
-                case "1":
-                case "2":
-                case "3":
-                case "4":
-                case "5":
-                case "6":
-                    if (pendingStopCalculation) selectVolte(Number(msg));
-                    break;
-            }
+            handleRemoteCommand(msg);
         };
 
         ws.onerror = err => {
@@ -750,7 +806,10 @@ saveSettingsBtn.onclick = async () => {
         companionUrls: [
             settingCompanionUrl1.value.trim(),
             settingCompanionUrl2.value.trim()
-        ].filter(Boolean)
+        ].filter(Boolean),
+        presenterNavKeys: settingPresenterNavKeys.value,
+        presenterBlankKey: settingPresenterBlankKey.value,
+        presenterBlankAction: settingPresenterBlankAction.value
     };
     BIG_POPUP_SECONDS = newSettings.bigPopupSeconds;
 
@@ -761,6 +820,8 @@ saveSettingsBtn.onclick = async () => {
     AUTO_CLEAR_SECONDS = newSettings.autoClearSeconds;
     BLOCK_SHORT_TIMES = newSettings.blockShortTimes;
     COMPANION_URLS = newSettings.companionUrls;
+
+    await applyPresenter();
 
     settingsModal.classList.remove("show");
     alert("Settings gemt. Genstart appen hvis WebSocket-port er ændret.");
@@ -776,9 +837,6 @@ function getRace() {
     return races[currentRace];
 }
 
-function isCurrentRace2000m() {
-    return Number(getRace()?.length) === 2000;
-}
 
 function removeInputFocus() {
     if (document.activeElement) {
@@ -1098,8 +1156,8 @@ function renderSplits() {
     splitTable.innerHTML = splits.map(s =>
         `<tr>
             <td>${s.dist} m</td>
-            <td>${format(s.time)}</td>
-            <td class="highlightCell">${format(s.pace)}</td>
+            <td>${s.skipped ? "sprunget over" : format(s.time)}</td>
+            <td class="highlightCell">${s.skipped ? "-" : format(s.pace)}</td>
         </tr>`
     ).join("");
 }
@@ -1168,7 +1226,6 @@ function selectVolte(volte) {
 function update() {
     const now = Date.now();
     mainTime.textContent = format(getMainElapsed(now));
-    if (last1000Start) last1000Time.textContent = format(now - last1000Start);
     if (last500Start) last500Time.textContent = format(now - last500Start);
 }
 
@@ -1190,6 +1247,7 @@ startBtn.onclick = () => {
 
     // START
     clearInterval(interval);
+    raceStopped = false;
 
     startTime = Date.now();
 
@@ -1221,10 +1279,6 @@ if (splits.length === 1) {
 if (splits.length === 2) {
     const formatted = format(pace);
 
-    if (isCurrentRace2000m()) {
-        last1000Start = Date.now();
-    }
-
     sendTimingData({ split1000: formatted });
 
     showBigPopup(`1000 m: ${formatted}`);
@@ -1238,25 +1292,6 @@ if (splits.length === 2) {
 
     renderSplits();
     updateSplitButton();
-};
-
-last1000Btn.onclick = () => {
-    last1000Start = Date.now();
-
-    if (isCurrentRace2000m() && splits.length < 2) {
-        const time = getMainElapsed();
-        const pace = time;
-
-        splits.push({ dist: 1000, time, pace });
-        splitDistance = 999999;
-
-        renderSplits();
-        updateSplitButton();
-
-        sendTimingData({ split1000: format(pace) });
-
-        showBigPopup(`1000 m: ${format(pace)}`);
-    }
 };
 
 last500Btn.onclick = () => {
@@ -1275,6 +1310,7 @@ stopAllBtn.onclick = () => {
     running = false;
     startBtn.textContent = "Start";
     pendingStopNow = now;
+    raceStopped = true;
 
     if (getRace().startType === "voltestart") {
         updateStatus("Status: Afventer valg af vindervolte", "statusPaused");
@@ -1291,16 +1327,6 @@ function finalizeStopAll(now = Date.now()) {
 
     let rows = [];
     let sendData = {};
-
-    if (last1000Start) {
-        const t1000 = now - last1000Start;
-        rows.push(`<tr>
-            <td>Sidste 1000 m</td>
-            <td>${format(t1000)}</td>
-            <td class="highlightCell">${format(t1000)}</td>
-        </tr>`);
-        sendData.last1000 = format(t1000);
-    }
 
     if (last500Start) {
         const t500 = now - last500Start;
@@ -1368,7 +1394,6 @@ function resetTimerOnly(keepAutoClear = false) {
     }
 
     clearInterval(interval);
-}
 
     running = false;
     startTime = null;
@@ -1377,16 +1402,16 @@ function resetTimerOnly(keepAutoClear = false) {
 
     splits = [];
     splitDistance = 500;
-    last1000Start = null;
     last500Start = null;
     pendingStopNow = null;
+    raceStopped = false;
+    presenterSkipped = new Set();
     hideVolteModal();
 
     stopTowerPolling();
     clearTowerInfo();
 
     mainTime.textContent = "0:00.0";
-    last1000Time.textContent = "0:00.0";
     last500Time.textContent = "0:00.0";
 
     splitTable.innerHTML = "";
@@ -1476,7 +1501,6 @@ document.addEventListener("keydown", e => {
         case " ": e.preventDefault(); startBtn.click(); break;
         case "s":
         case "S": splitBtn.click(); break;
-        case "1": last1000Btn.click(); break;
         case "5": last500Btn.click(); break;
         case "x":
         case "X": stopAllBtn.click(); break;
@@ -1522,6 +1546,251 @@ if (window.appUpdater) {
     });
 }
 
+
+// ================= FJERNSTYRING (WebSocket + presenter) =================
+
+function handleRemoteCommand(msg) {
+    switch (msg) {
+        case "START_TOGGLE": startBtn.click(); break;
+        case "SPLIT": splitBtn.click(); break;
+        case "LAST_500": last500Btn.click(); break;
+        case "STOP_ALL": stopAllBtn.click(); break;
+        case "RESTART": restartBtn.click(); break;
+        case "RESET": resetBtn.click(); break;
+        case "NEXT": presenterNext(); break;
+        case "SKIP": presenterSkip(); break;
+        case "1":
+        case "2":
+        case "3":
+        case "4":
+        case "5":
+        case "6":
+            if (pendingStopCalculation) selectVolte(Number(msg));
+            break;
+    }
+}
+
+const PRESENTER_LABELS = {
+    SPLIT500: "500 m",
+    SPLIT1000: "1000 m",
+    LAST_500: "Sidste 500 m",
+    STOP_ALL: "Mål"
+};
+
+const PRESENTER_ORDER = ["SPLIT500", "SPLIT1000", "LAST_500", "STOP_ALL"];
+
+// Bygger løbets tidspunkter i rækkefølge ud fra løbslængden.
+// Punkter på samme distance samles i ét tryk (fx 1000 m + sidste 500 m i et 1500 m-løb).
+function getPresenterSteps() {
+    const length = Number(getRace()?.length) || 2000;
+
+    const events = [
+        { dist: 500, key: "SPLIT500" },
+        { dist: 1000, key: "SPLIT1000" },
+        { dist: length - 500, key: "LAST_500" },
+        { dist: length, key: "STOP_ALL" }
+    ].filter(e => e.dist > 0 && e.dist <= length);
+
+    events.sort((a, b) =>
+        a.dist - b.dist || PRESENTER_ORDER.indexOf(a.key) - PRESENTER_ORDER.indexOf(b.key)
+    );
+
+    const groups = [];
+    events.forEach(e => {
+        const last = groups[groups.length - 1];
+        if (last && last.dist === e.dist) last.keys.push(e.key);
+        else groups.push({ dist: e.dist, keys: [e.key] });
+    });
+
+    return groups;
+}
+
+function isPresenterKeyDone(key) {
+    if (presenterSkipped.has(key)) return true;
+    switch (key) {
+        case "SPLIT500": return splits.length >= 1;
+        case "SPLIT1000": return splits.length >= 2;
+        case "LAST_500": return !!last500Start;
+        case "STOP_ALL": return raceStopped;
+    }
+    return true;
+}
+
+function getNextPresenterStep() {
+    const groups = getPresenterSteps();
+    for (const g of groups) {
+        const pending = g.keys.filter(k => !isPresenterKeyDone(k));
+        if (pending.length) return { dist: g.dist, keys: pending };
+    }
+    return null;
+}
+
+function stepLabel(step) {
+    return step.keys.map(k => PRESENTER_LABELS[k]).join(" + ");
+}
+
+function runPresenterKey(key) {
+    switch (key) {
+        case "SPLIT500":
+            if (splits.length === 0) splitBtn.click();
+            break;
+        case "SPLIT1000":
+            if (splits.length === 1) splitBtn.click();
+            break;
+        case "LAST_500": last500Btn.click(); break;
+        case "STOP_ALL": stopAllBtn.click(); break;
+    }
+}
+
+function presenterNext() {
+    if (pendingStopCalculation) {
+        presenterFeedback("Vælg vindervolte på PC / Stream Deck", true);
+        return;
+    }
+
+    // Ikke startet endnu -> start uret
+    if (!running && elapsedBeforePause === 0 && !raceStopped) {
+        startBtn.click();
+        lastPresenterStepAt = Date.now();
+        presenterFeedback("✔ START");
+        return;
+    }
+
+    if (raceStopped) {
+        presenterFeedback("Løbet er slut – næste løb vælges på PC", true);
+        return;
+    }
+
+    if (!running) {
+        presenterFeedback("Uret er pauset – start det på PC", true);
+        return;
+    }
+
+    // Beskyttelse mod utilsigtet dobbelttryk
+    if (Date.now() - lastPresenterStepAt < PRESENTER_STEP_GUARD_MS) return;
+
+    const step = getNextPresenterStep();
+    if (!step) return;
+
+    lastPresenterStepAt = Date.now();
+    step.keys.forEach(runPresenterKey);
+    presenterFeedback("✔ " + stepLabel(step));
+}
+
+function presenterSkip() {
+    if (!running) return;
+    if (Date.now() - lastPresenterStepAt < PRESENTER_STEP_GUARD_MS) return;
+
+    const step = getNextPresenterStep();
+    if (!step) return;
+
+    if (step.keys.includes("STOP_ALL")) {
+        presenterFeedback("Mål kan ikke springes over", true);
+        return;
+    }
+
+    lastPresenterStepAt = Date.now();
+
+    step.keys.forEach(key => {
+        if (key === "SPLIT500" && splits.length === 0) {
+            splits.push({ dist: 500, time: null, pace: null, skipped: true });
+            splitDistance = 1000;
+        } else if (key === "SPLIT1000" && splits.length === 1) {
+            splits.push({ dist: 1000, time: null, pace: null, skipped: true });
+            splitDistance = 999999;
+        } else {
+            presenterSkipped.add(key);
+        }
+    });
+
+    renderSplits();
+    updateSplitButton();
+    presenterFeedback("⏭ Sprang over: " + stepLabel(step));
+}
+
+function presenterFeedback(text, isWarning = false) {
+    presenterBar.textContent = "🎯 " + text;
+    presenterBar.classList.remove("flash", "warn");
+    presenterBar.classList.add(isWarning ? "warn" : "flash");
+
+    if (presenterFlashTimer) clearTimeout(presenterFlashTimer);
+    presenterFlashTimer = setTimeout(() => {
+        presenterFlashTimer = null;
+        presenterBar.classList.remove("flash", "warn");
+        updatePresenterBar();
+    }, 1500);
+}
+
+function updatePresenterBar() {
+    presenterBar.classList.toggle("show", PRESENTER_ENABLED);
+    if (!PRESENTER_ENABLED || presenterFlashTimer) return;
+
+    let text;
+    if (pendingStopCalculation) text = "Afventer vindervolte (vælges på PC / Stream Deck)";
+    else if (raceStopped) text = "Løbet er slut";
+    else if (!running && elapsedBeforePause === 0) text = "Næste tryk: START";
+    else if (!running) text = "Uret er pauset";
+    else {
+        const step = getNextPresenterStep();
+        text = step ? `Næste tryk: ${stepLabel(step)} (ved ${step.dist} m)` : "Alle punkter taget";
+    }
+
+    presenterBar.textContent = "🎯 " + text;
+}
+
+function updatePresenterToggle() {
+    presenterToggleBtn.textContent = PRESENTER_ENABLED ? "🎯 Presenter: TIL" : "🎯 Presenter: FRA";
+    presenterToggleBtn.classList.toggle("on", PRESENTER_ENABLED);
+    updatePresenterBar();
+}
+
+async function applyPresenter() {
+    if (!window.presenter) return;
+
+    const status = await window.presenter.apply();
+
+    if (status.enabled && status.failed.length) {
+        alert(
+            "Presenter: Kunne ikke reservere tasterne " + status.failed.join(", ") +
+            ".\nEt andet program bruger dem måske allerede."
+        );
+    }
+}
+
+presenterToggleBtn.onclick = async () => {
+    PRESENTER_ENABLED = !PRESENTER_ENABLED;
+    updatePresenterToggle();
+    presenterToggleBtn.blur();
+
+    if (window.appSettings) {
+        await window.appSettings.set({ presenterEnabled: PRESENTER_ENABLED });
+    }
+    await applyPresenter();
+};
+
+if (window.presenter) {
+    window.presenter.onCommand(({ action }) => {
+        if (!PRESENTER_ENABLED) return;
+        handleRemoteCommand(action);
+    });
+}
+
+setInterval(updatePresenterBar, 250);
+
+const KEY_NAMES = {
+    PageDown: "Page Down", PageUp: "Page Up",
+    ArrowRight: "Højre pil", ArrowLeft: "Venstre pil",
+    ArrowUp: "Pil op", ArrowDown: "Pil ned",
+    ".": "Punktum (.)", " ": "Mellemrum", Escape: "Esc"
+};
+
+presenterKeyTester.addEventListener("keydown", e => {
+    e.preventDefault();
+    e.stopPropagation();
+    const name = KEY_NAMES[e.key] || e.key;
+    presenterKeyTester.value = `${name}   (key: "${e.key}", code: ${e.code})`;
+});
+
 loadAppSettings().then(async () => {
     clearInterval(interval);
 
@@ -1532,11 +1801,9 @@ loadAppSettings().then(async () => {
     splitDistance = 500;
     splits = [];
 
-    last1000Start = null;
     last500Start = null;
 
     mainTime.textContent = "0:00.0";
-    last1000Time.textContent = "0:00.0";
     last500Time.textContent = "0:00.0";
 
     startBtn.textContent = "Start";

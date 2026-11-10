@@ -7,6 +7,10 @@ const store = new Store({
       "http://194.255.124.138:500/api/timing"
     ],
     localWsPort: 8080,
+    presenterEnabled: false,
+    presenterNavKeys: "PAGE",
+    presenterBlankKey: ".",
+    presenterBlankAction: "STOP_ALL",
     autoClearSeconds: 30,
     companionUrls: [
       "http://194.255.124.138:25002/api/custom-variable",
